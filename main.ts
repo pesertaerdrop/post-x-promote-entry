@@ -15,9 +15,12 @@
 // Run it the way the grader does:
 //   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
 // It prints nothing on success. Deterministic: the output is a byte copy of
-// the input, so two runs always write the same bytes.
+// the input, so two runs always write the same bytes. After copying, the
+// program reads the output back and verifies it byte for byte against the
+// source, so a corrupted or truncated copy fails loudly instead of handing
+// the grader a wrong post URL.
 
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const botDir = process.env.MAKEFUN_BOT_DIR ?? '/bot';
@@ -25,9 +28,24 @@ const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 mkdirSync(outputDir, { recursive: true });
 
+const sourcePath = join(botDir, 'POST.json');
+const outputPath = join(outputDir, 'POST.json');
+
 try {
-  copyFileSync(join(botDir, 'POST.json'), join(outputDir, 'POST.json'));
+  copyFileSync(sourcePath, outputPath);
 } catch (error) {
   console.error(`could not copy POST.json from ${botDir}: ${(error as Error).message}`);
   process.exit(1);
+}
+
+// Post-write verification, byte for byte: read the file we just wrote back
+// and compare it against the source we were supposed to copy. A copy that
+// silently truncates or corrupts would hand the grader a wrong post URL, so
+// any mismatch is a hard failure instead of a quiet success.
+const expected = readFileSync(sourcePath);
+const written = readFileSync(outputPath);
+if (!written.equals(expected)) {
+  throw new Error(
+    `POST.json verification failed: output (${written.length} bytes) does not match source (${expected.length} bytes)`,
+  );
 }
